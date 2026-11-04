@@ -1,4 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require('electron');
+let autoUpdater = null;
+try { ({ autoUpdater } = require('electron-updater')); } catch {}
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -57,7 +59,7 @@ async function ensureFabric(mcv) {
 // ---------- Instances ----------
 const INST = path.join(ROOT, 'instances');
 const SUBS = ['mods', 'resourcepacks', 'shaderpacks', 'schematics', 'saves', 'config'];
-const KEYS = ['name', 'version', 'type', 'fabric', 'ram', 'lastPlayed'];
+const KEYS = ['name', 'version', 'type', 'fabric', 'ram', 'lastPlayed', 'servers', 'lastServer'];
 const insts = () => load().instances || [];
 const find = (id) => insts().find(i => i.id === id);
 const idir = (id, sub = '') => path.join(INST, id, sub);
@@ -289,7 +291,7 @@ function needJava(id) {
 }
 
 // ---------- Launch ----------
-ipcMain.handle('launch', async (_, instId) => {
+ipcMain.handle('launch', async (_, instId, server) => {
   const o = find(instId);
   if (!o) throw new Error('Instance not found.');
   if (!mc) throw new Error('Please sign in with Microsoft first.');
@@ -299,10 +301,15 @@ ipcMain.handle('launch', async (_, instId) => {
   const java = javas.filter(j => j.major >= need).sort((a, b) => a.major - b.major || (a.path === 'java') - (b.path === 'java'))[0];
   const st = (load().cfg || {}).settings || {};
   const javaPath = st.java && fs.existsSync(st.java) ? st.java : java ? java.path : await downloadJava(need, send);
+  const qp = (v) => { const m = v.match(/^1\.(\d+)/); if (m) return +m[1] >= 20; const w = v.match(/^(\d\d)w(\d\d)/); return w ? +w[1] > 23 || (+w[1] === 23 && +w[2] >= 14) : true; };
   const extra = {
     ...(st.jvm ? { customArgs: String(st.jvm).split(/\s+/).filter(Boolean) } : {}),
     ...(st.gw || st.gh || st.fs ? { window: { width: +st.gw || undefined, height: +st.gh || undefined, fullscreen: !!st.fs } } : {}),
   };
+  if (server && server.address) {
+    const [h, p] = String(server.address).split(':');
+    extra.customLaunchArgs = qp(o.version) ? ['--quickPlayMultiplayer', server.address] : ['--server', h, '--port', p || '25565'];
+  }
   if ((await run(javaPath, ['-version'])) === null) {
     if (!java) fs.rmSync(path.join(ROOT, 'runtime', `java${need}`), { recursive: true, force: true });
     throw new Error(`Java does not start: ${javaPath}`);
@@ -351,6 +358,19 @@ ipcMain.handle('launch', async (_, instId) => {
   if (!proc) throw new Error('Launch failed: ' + (lines.filter(x => /could not|couldn|error|fail|exception|invalid/i.test(x)).pop() || lines.pop() || 'unknown error') + ` (Java: ${javaPath}, args: ${argLen}, last start: ${last})`);
 });
 
+const CBG = () => path.join(app.getPath('userData'), 'custom-bg.jpg');
+const bgData = () => (fs.existsSync(CBG()) ? 'data:image/jpeg;base64,' + fs.readFileSync(CBG()).toString('base64') : null);
+ipcMain.handle('bg:pick', async () => {
+  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }], properties: ['openFile'] });
+  if (r.canceled) return null;
+  const img = nativeImage.createFromPath(r.filePaths[0]);
+  if (img.isEmpty()) throw new Error('Could not read that image.');
+  fs.writeFileSync(CBG(), (img.getSize().width > 1920 ? img.resize({ width: 1920 }) : img).toJPEG(85));
+  return bgData();
+});
+ipcMain.handle('bg:get', () => bgData());
+ipcMain.handle('bg:clear', () => fs.rmSync(CBG(), { force: true }));
+ipcMain.handle('update:install', () => autoUpdater && autoUpdater.quitAndInstall());
 ipcMain.handle('win', (_, a) => {
   if (!win) return;
   if (a === 'min') win.minimize();
@@ -365,5 +385,11 @@ app.whenReady().then(() => {
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   win.loadFile('index.html');
+  if (app.isPackaged && autoUpdater) {
+    autoUpdater.on('update-available', i => win.webContents.send('upd', { state: 'available', version: i.version }));
+    autoUpdater.on('update-downloaded', i => win.webContents.send('upd', { state: 'ready', version: i.version }));
+    autoUpdater.on('error', () => {});
+    win.webContents.once('did-finish-load', () => autoUpdater.checkForUpdates().catch(() => {}));
+  }
 });
 app.on('window-all-closed', () => app.quit());

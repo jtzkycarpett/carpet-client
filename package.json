@@ -1,6 +1,6 @@
 {
   "name": "carpet-client",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Carpet Client \u2013 eigener Minecraft Launcher mit Fabric",
   "main": "main.js",
   "scripts": {
@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "minecraft-launcher-core": "^3.18.1",
-    "msmc": "^5.0.5"
+    "msmc": "^5.0.5",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -47,6 +48,12 @@
     "linux": {
       "target": "AppImage",
       "icon": "icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jtzkycarpet",
+      "repo": "carpet-client",
+      "releaseType": "release"
     }
   }
 }
