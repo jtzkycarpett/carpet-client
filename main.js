@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, Tray, Menu } = require('electron');
 let autoUpdater = null;
 try { ({ autoUpdater } = require('electron-updater')); } catch {}
 const path = require('path');
@@ -17,7 +17,7 @@ const CFG = path.join(app.getPath('userData'), 'config.json');
 let win, mc = null;
 
 const load = () => { try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); } catch { return {}; } };
-const save = (o) => fs.writeFileSync(CFG, JSON.stringify({ ...load(), ...o }));
+const save = (o) => { fs.writeFileSync(CFG, JSON.stringify({ ...load(), ...o })); if ('instances' in o) rebuildQuick(); };
 const getJSON = async (u) => { const r = await fetch(u, { headers: { 'User-Agent': UA } }); if (!r.ok) throw new Error(`${u} → ${r.status}`); return r.json(); };
 const user = () => (mc ? { name: mc.profile.name, id: mc.profile.id } : null);
 
@@ -358,6 +358,91 @@ ipcMain.handle('launch', async (_, instId, server) => {
   if (!proc) throw new Error('Launch failed: ' + (lines.filter(x => /could not|couldn|error|fail|exception|invalid/i.test(x)).pop() || lines.pop() || 'unknown error') + ` (Java: ${javaPath}, args: ${argLen}, last start: ${last})`);
 });
 
+// ---------- Wardrobe (skins) ----------
+const SKINS = path.join(ROOT, 'skins');
+const smeta = () => load().skins || [];
+const token = () => { if (!mc) throw new Error('Please sign in with Microsoft first.'); return mc.mclc().access_token; };
+const dataPng = (b) => 'data:image/png;base64,' + b.toString('base64');
+function addSkin(buf, name, variant) {
+  const img = nativeImage.createFromBuffer(buf), sz = img.getSize();
+  if (img.isEmpty() || sz.width !== 64 || ![32, 64].includes(sz.height)) throw new Error('A skin must be a 64x64 PNG image.');
+  fs.mkdirSync(SKINS, { recursive: true });
+  const id = Date.now().toString(36);
+  fs.writeFileSync(path.join(SKINS, id + '.png'), buf);
+  const sk = { id, name: String(name).slice(0, 30), variant };
+  save({ skins: [...smeta(), sk] });
+  return sk;
+}
+ipcMain.handle('skin:list', () => smeta().flatMap(k => { try { return [{ ...k, data: dataPng(fs.readFileSync(path.join(SKINS, k.id + '.png'))) }]; } catch { return []; } }));
+ipcMain.handle('skin:add', async () => {
+  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'Skin (PNG)', extensions: ['png'] }], properties: ['openFile'] });
+  if (r.canceled) return null;
+  return addSkin(fs.readFileSync(r.filePaths[0]), path.basename(r.filePaths[0], '.png'), 'classic');
+});
+ipcMain.handle('skin:fromName', async (_, name) => {
+  const p = await getJSON(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(String(name).trim())}`).catch(() => { throw new Error('Player not found.'); });
+  const prof = await getJSON(`https://sessionserver.mojang.com/session/minecraft/profile/${p.id}`);
+  const tex = JSON.parse(Buffer.from(prof.properties.find(x => x.name === 'textures').value, 'base64').toString()).textures.SKIN;
+  if (!tex) throw new Error('This player has no custom skin.');
+  const buf = Buffer.from(await (await fetch(tex.url)).arrayBuffer());
+  return addSkin(buf, p.name, tex.metadata && tex.metadata.model === 'slim' ? 'slim' : 'classic');
+});
+ipcMain.handle('skin:set', (_, id, variant) => save({ skins: smeta().map(k => (k.id === id ? { ...k, variant: variant === 'slim' ? 'slim' : 'classic' } : k)) }));
+ipcMain.handle('skin:delete', (_, id) => { fs.rmSync(path.join(SKINS, path.basename(id) + '.png'), { force: true }); save({ skins: smeta().filter(k => k.id !== id) }); });
+ipcMain.handle('skin:apply', async (_, id) => {
+  const k = smeta().find(x => x.id === id);
+  if (!k) throw new Error('Skin not found.');
+  const form = new FormData();
+  form.append('variant', k.variant);
+  form.append('file', new Blob([fs.readFileSync(path.join(SKINS, id + '.png'))], { type: 'image/png' }), 'skin.png');
+  const r = await fetch('https://api.minecraftservices.com/minecraft/profile/skins', { method: 'POST', headers: { Authorization: `Bearer ${token()}`, 'User-Agent': UA }, body: form });
+  if (!r.ok) throw new Error(r.status === 401 ? 'Your session expired. Sign out and sign in again.' : `Mojang refused the skin (${r.status}).`);
+});
+ipcMain.handle('skin:current', async () => {
+  const r = await fetch('https://api.minecraftservices.com/minecraft/profile', { headers: { Authorization: `Bearer ${token()}`, 'User-Agent': UA } });
+  if (!r.ok) throw new Error('Could not load your current skin. Sign out and in again.');
+  const sk = (await r.json()).skins.find(x => x.state === 'ACTIVE');
+  if (!sk) throw new Error('No active skin found.');
+  return { data: dataPng(Buffer.from(await (await fetch(sk.url)).arrayBuffer())), variant: String(sk.variant).toLowerCase() };
+});
+
+// ---------- Quick access: tray, jump list, shortcuts ----------
+let tray, pendingQuick = null;
+const launchArg = (argv) => { const a = argv.find(x => x.startsWith('--launch=')); return a ? a.slice(9) : null; };
+pendingQuick = launchArg(process.argv);
+function quick(id, server) { if (!win) return; win.show(); win.focus(); win.webContents.send('quick', { id, server }); }
+function rebuildQuick() {
+  if (!app.isReady()) return;
+  const list = [...insts()].sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0));
+  if (process.platform === 'win32') {
+    app.setUserTasks(list.slice(0, 5).map(i => ({ program: process.execPath, arguments: `--launch=${i.id}`, iconPath: process.execPath, iconIndex: 0, title: `Play ${i.name}`, description: i.version })));
+  }
+  if (!tray) {
+    tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 20, height: 20 }));
+    tray.setToolTip('Carpet Client');
+    tray.on('click', () => { win.show(); win.focus(); });
+  }
+  const joins = list.filter(i => i.lastServer).slice(0, 4);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Carpet Client', click: () => { win.show(); win.focus(); } }, { type: 'separator' },
+    ...list.slice(0, 8).map(i => ({ label: `Play ${i.name}`, click: () => quick(i.id) })),
+    ...(joins.length ? [{ type: 'separator' }, ...joins.map(i => ({ label: `Join ${i.lastServer.name} (${i.name})`, click: () => quick(i.id, i.lastServer) }))] : []),
+    { type: 'separator' }, { label: 'Quit', role: 'quit' },
+  ]));
+}
+ipcMain.handle('quick:pending', () => { const p = pendingQuick; pendingQuick = null; return p ? { id: p } : null; });
+ipcMain.handle('inst:shortcut', (_, id) => {
+  const i = find(id);
+  if (!i) throw new Error('Instance not found.');
+  const lnk = path.join(app.getPath('desktop'), `${i.name.replace(/[\\/:*?"<>|]/g, '')} - Carpet Client.lnk`);
+  const args = (app.isPackaged ? '' : `"${app.getAppPath()}" `) + `--launch=${id}`;
+  if (!shell.writeShortcutLink(lnk, 'create', { target: process.execPath, args, cwd: path.dirname(process.execPath), description: `Play ${i.name}`, icon: process.execPath, iconIndex: 0 })) throw new Error('Could not create the shortcut (Windows only).');
+  return lnk;
+});
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+app.on('second-instance', (_, argv) => { const id = launchArg(argv); if (win) { win.show(); win.focus(); } if (id) quick(id); });
+
 const CBG = () => path.join(app.getPath('userData'), 'custom-bg.jpg');
 const bgData = () => (fs.existsSync(CBG()) ? 'data:image/jpeg;base64,' + fs.readFileSync(CBG()).toString('base64') : null);
 ipcMain.handle('bg:pick', async () => {
@@ -379,12 +464,14 @@ ipcMain.handle('win', (_, a) => {
 });
 
 app.whenReady().then(() => {
+  if (!gotLock) return;
   win = new BrowserWindow({
     width: 1180, height: 720, minWidth: 980, minHeight: 620, frame: false, backgroundColor: '#14182b',
     autoHideMenuBar: true, title: 'Carpet Client',
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   win.loadFile('index.html');
+  rebuildQuick();
   if (app.isPackaged && autoUpdater) {
     autoUpdater.on('update-available', i => win.webContents.send('upd', { state: 'available', version: i.version }));
     autoUpdater.on('update-downloaded', i => win.webContents.send('upd', { state: 'ready', version: i.version }));
