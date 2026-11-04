@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Carpet Client</title>
+<style>
+:root{--blur:16px;--radius:16px;--dim:.55;--bgblur:2px;--bgimg:url(assets/bg.jpg);--bg:#0b0d19;--glass:rgba(26,31,58,.55);--line:rgba(255,255,255,.1);--red:#c0414b;--red2:#d9565f;--gold:#e0ad4a;--text:#f2eef8;--mute:#a5aacb;
+--sans:'Poppins','Segoe UI Variable Display','Segoe UI',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font:14px/1.5 var(--sans);color:var(--text);background:var(--bg);display:grid;grid-template-rows:64px 1fr;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.bg{position:fixed;inset:0;z-index:-1;overflow:hidden;background:#0b0d19}
+.bg::before{content:'';position:absolute;inset:-30px;background:var(--bgimg) center/cover;filter:blur(var(--bgblur)) saturate(1.1)}
+.bg::after{content:'';position:absolute;inset:0;background:rgba(8,10,20,var(--dim))}
+.glass{background:var(--glass);-webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur));border:1px solid var(--line);border-radius:var(--radius)}
+
+/* Top bar */
+header{display:flex;align-items:center;gap:28px;padding:0 20px 0 28px;-webkit-app-region:drag}
+header button,header nav{-webkit-app-region:no-drag}
+.logo{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.18em;font-size:18px;white-space:nowrap}
+.logo img{border-radius:8px}
+nav{display:flex;gap:4px;margin:0 auto}
+nav button{padding:8px 18px;border-radius:10px;color:var(--mute)}
+nav button:hover{color:var(--text)}
+nav button.on{color:var(--text);background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px var(--line)}
+.right{display:flex;align-items:center;gap:6px}
+.chip{display:flex;align-items:center;gap:8px;padding:5px 14px 5px 6px;border-radius:12px;background:rgba(255,255,255,.06);margin-right:8px}
+.chip img{width:28px;height:28px;border-radius:6px;image-rendering:pixelated}
+.chip img[hidden]{display:none}
+.wb{width:40px;height:34px;border-radius:8px;color:var(--mute)}
+.wb:hover{background:rgba(255,255,255,.1);color:var(--text)}.wb.x:hover{background:var(--red)}
+
+main{position:relative;overflow:hidden}
+.view{position:absolute;inset:0;overflow:auto;padding:12px 56px 40px;display:none}
+.view.on{display:block}
+#v-home.on{display:flex;flex-direction:column;justify-content:flex-end}
+h1.t{font-size:32px;font-weight:700;margin:8px 0 18px}
+h1.big{font-size:clamp(40px,6vw,76px);line-height:1.05;font-weight:700;letter-spacing:-.02em;overflow-wrap:anywhere}
+.sub{color:var(--mute);font-size:18px;font-weight:500;margin:6px 0 18px}
+.head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.head h1.t{margin-bottom:6px}
+
+/* Home */
+.launch{display:flex;gap:12px;align-items:center;position:relative}
+.go{padding:14px 44px;border-radius:12px;background:var(--red);color:#fff;font-weight:600;font-size:16px;box-shadow:0 8px 24px rgba(192,65,75,.35)}
+.go:hover:not(:disabled){background:var(--red2)}.go:disabled{opacity:.55}
+.ico{width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px var(--line);display:grid;place-items:center}
+.ico:hover{background:rgba(255,255,255,.14)}.ico[hidden]{display:none}
+.pop{position:absolute;left:0;top:62px;z-index:5;width:310px;padding:18px;display:none;background:rgba(16,19,40,.88)}
+.pop.on{display:block}
+.pop .row{margin-bottom:14px}
+.pop input[type=range],dialog input[type=range]{width:100%;accent-color:var(--gold)}
+.bar{height:5px;background:rgba(255,255,255,.1);border-radius:3px;margin-top:16px;max-width:420px;overflow:hidden}
+.bar div{height:100%;width:0;background:var(--gold);transition:width .2s}
+.status{min-height:22px;margin-top:8px;color:var(--mute);max-width:720px}
+.cards{display:flex;gap:18px;margin-top:22px;overflow-x:auto;padding:4px 4px 10px}
+.vc{flex:0 0 240px;height:140px;border-radius:calc(var(--radius) + 2px);position:relative;overflow:hidden;text-align:left;padding:14px 18px;display:flex;flex-direction:column;justify-content:flex-end;border:2px solid transparent;font-weight:700;font-size:24px;line-height:1.2}
+.vc small{font-size:13px;font-weight:500;opacity:.85}
+.vc.on{border-color:var(--gold)}
+.vc::before{content:'';position:absolute;inset:0;opacity:.12;background:repeating-conic-gradient(#fff 0 25%,transparent 0 50%) 0 0/22px 22px}
+.vc>*{position:relative}
+.vc.add{background:rgba(255,255,255,.07);border:2px dashed var(--line);align-items:center;justify-content:center;color:var(--mute);gap:2px}
+.vc.add:hover{color:var(--text);border-color:var(--gold)}
+.vc.add span{font-size:40px;font-weight:300;line-height:1}
+.vc.add small{font-size:14px}
+.igrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px}
+.igrid .vc{flex:none;height:150px}
+
+/* Inputs */
+.in{width:100%;padding:12px 16px;border-radius:calc(var(--radius)*.75);border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);font:inherit}
+select.in{width:auto;padding-right:10px;max-width:100%}select.in option{background:#1a1f3a}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{padding:5px 14px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.pill:hover{color:var(--text)}
+.pill.on{background:var(--gold);border-color:var(--gold);color:#241b05;font-weight:600}
+.btn{padding:9px 18px;border-radius:calc(var(--radius)*.65);background:rgba(255,255,255,.08);border:1px solid var(--line)}
+.btn:hover:not(:disabled){border-color:var(--gold)}.btn:disabled{opacity:.45}
+.btn.main{background:var(--red);border-color:var(--red)}
+.btn.danger:hover:not(:disabled){border-color:var(--red2);color:var(--red2)}
+.sw{width:46px;height:26px;border-radius:99px;background:rgba(255,255,255,.18);position:relative;flex:none}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+.sw.on{background:var(--red)}.sw.on::after{left:23px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.mute{color:var(--mute);font-size:13px}
+
+/* Instance page */
+.panel{padding:20px;margin-bottom:16px;max-width:820px}
+.files{list-style:none;padding:0;margin-top:10px}
+.files li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);word-break:break-all}
+.files li button{color:var(--mute);flex:none}.files li button:hover{color:var(--red2)}
+.path{font-family:Consolas,'Cascadia Mono',monospace;font-size:12px;color:var(--mute)}
+
+/* Browse */
+.browse{display:grid;grid-template-columns:1fr 250px;gap:20px;align-items:start}
+.tools{display:flex;gap:10px;align-items:center;margin:12px 0;flex-wrap:wrap}
+.tools .sp{flex:1}
+.r{display:flex;gap:16px;padding:16px;margin-bottom:12px}
+.r .ic{width:76px;height:76px;border-radius:14px;background:rgba(255,255,255,.08);object-fit:cover;flex:none}
+.rb{flex:1;min-width:0}.rt{font-size:18px}.by{color:var(--mute)}
+.rd{color:#d8d6ea;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:2px 0 8px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{padding:2px 10px;border-radius:8px;background:rgba(255,255,255,.08);font-size:12px;color:var(--mute)}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:150px}
+.inst{padding:9px 18px;border-radius:12px;border:1.5px solid var(--gold);color:var(--gold);font-weight:600}
+.inst:hover:not(:disabled){background:var(--gold);color:#241b05}.inst:disabled{opacity:.6}
+.st{color:var(--mute);font-size:13px;white-space:nowrap}
+.filters{padding:18px;position:sticky;top:0}.filters h3{font-size:16px;margin-bottom:12px}
+
+/* Logs */
+.logtools{display:flex;gap:8px;margin-bottom:12px}
+.logbox{height:calc(100% - 120px);min-height:240px;overflow:auto;background:rgba(6,8,18,.75);border:1px solid var(--line);border-radius:12px;padding:12px;font:12.5px/1.5 Consolas,'Cascadia Mono',monospace;white-space:pre-wrap;word-break:break-all}
+.logbox .e{color:#ff8a93}.logbox .w{color:var(--gold)}.logbox .l{color:#8fb7ff}
+
+/* Create dialog */
+dialog{margin:auto;padding:26px;width:430px;max-width:92vw;color:var(--text);background:rgba(16,19,40,.95);border:1px solid var(--line);border-radius:18px}
+dialog::backdrop{background:rgba(5,6,14,.65);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+dialog h2{margin-bottom:16px}
+dialog label{display:block;margin-bottom:14px;color:var(--mute)}
+dialog label .in{margin-top:6px}dialog select.in{width:100%}
+dialog .row{margin-bottom:14px}
+.chk{display:flex!important;align-items:center;gap:8px}
+.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.pcs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-top:14px}
+.pc{padding:14px;display:flex;flex-direction:column;gap:6px}.pc .btn{margin-top:auto}
+.sr{padding:10px 0;border-top:1px solid var(--line)}
+.panel h3{font-size:16px;margin-bottom:4px}
+.rng{display:flex;gap:10px;align-items:center;min-width:260px}.rng input{flex:1;accent-color:var(--gold)}.rng span{width:52px;text-align:right}
+input[type=color]{width:46px;height:32px;border:0;background:none;padding:0}
+body.compact .view{padding:6px 28px 24px}body.compact .r{padding:10px}body.compact .vc{height:110px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<header>
+  <div class="logo"><img src="assets/logo.png" alt="" width="32" height="32">CARPET CLIENT</div>
+  <nav>
+    <button data-v="home" class="on">Home</button>
+    <button data-v="insts">Instances</button>
+    <button data-v="browse">Browse</button>
+    <button data-v="logs">Logs</button>
+    <button data-v="set">Settings</button>
+  </nav>
+  <div class="right">
+    <button class="chip" id="chip"><img id="av" alt="" hidden><span id="cname">Sign in</span></button>
+    <button class="wb" id="wmin" aria-label="Minimize">&#8212;</button>
+    <button class="wb" id="wmax" aria-label="Maximize">&#9633;</button>
+    <button class="wb x" id="wclose" aria-label="Close">&#10005;</button>
+  </div>
+</header>
+
+<main>
+  <section class="view on" id="v-home">
+    <h1 class="big" id="selv">No instance yet</h1>
+    <div class="sub" id="selsub"></div>
+    <div class="launch">
+      <button class="go" id="go">Create instance</button>
+      <button class="ico" id="gear" aria-label="Instance settings" hidden>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
+      </button>
+      <div class="pop glass" id="pop">
+        <div class="row"><div><b>Launch with Fabric</b><div class="mute">Loads the mods of this instance</div></div><button class="sw" id="pfab" role="switch" aria-label="Fabric"></button></div>
+        <label class="mute">Memory: <b id="ramv">4</b> GB<input type="range" id="ram" min="1" max="16" value="4"></label>
+      </div>
+    </div>
+    <div class="bar"><div id="bar"></div></div>
+    <div class="status" id="status"></div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section class="view" id="v-insts">
+    <div class="head"><h1 class="t">Instances</h1><button class="btn main" id="newi">Create instance</button></div>
+    <div class="igrid" id="igrid"></div>
+  </section>
+
+  <section class="view" id="v-inst">
+    <div class="head">
+      <div><button class="mute" id="iback">&#8249; All instances</button><h1 class="t" id="iname"></h1><div class="sub" id="isub" style="margin:0 0 18px"></div></div>
+      <div class="pills">
+        <button class="btn main" id="iplay">Play</button>
+        <button class="btn" id="iopen">Open folder</button>
+        <button class="btn danger" id="idel">Delete</button>
+      </div>
+    </div>
+    <div class="panel glass">
+      <div class="row"><div><b>Minecraft version</b><div class="mute">Mods you installed for another version may stop working.</div></div><select class="in" id="iver" aria-label="Minecraft version"></select></div>
+      <div class="row" style="margin-top:14px"><div><b>Fabric</b><div class="mute">Needed for mods.</div></div><button class="sw" id="ifab" role="switch" aria-label="Fabric"></button></div>
+    </div>
+    <div class="panel glass">
+      <div class="pills" id="subs">
+        <button class="pill on" data-s="mods">Mods</button>
+        <button class="pill" data-s="resourcepacks">Resource packs</button>
+        <button class="pill" data-s="shaderpacks">Shaders</button>
+        <button class="pill" data-s="schematics">Schematics</button>
+        <button class="pill" data-s="saves">Worlds</button>
+        <button class="pill" data-s="config">Config</button>
+      </div>
+      <div class="row" style="margin-top:14px"><span class="path" id="ipath"></span>
+        <span class="pills"><button class="btn" id="fapi">Install Fabric API</button><button class="btn" id="fopen">Open folder</button></span></div>
+      <div class="mute" id="fstat"></div>
+      <ul class="files" id="files"></ul>
+    </div>
+  </section>
+
+  <section class="view" id="v-browse">
+    <h1 class="t">Discover</h1>
+    <div class="pills" id="types" style="margin-bottom:14px">
+      <button class="pill on" data-t="mod">Mods</button>
+      <button class="pill" data-t="resourcepack">Resource packs</button>
+      <button class="pill" data-t="shader">Shaders</button>
+      <button class="pill" data-t="modpack">Modpacks</button>
+    </div>
+    <div class="browse">
+      <div>
+        <div id="featured" class="panel glass" hidden>
+          <div class="row"><div><b>Featured PvP packs</b><div class="mute">One click creates a ready instance with Fabric and the mods.</div></div>
+          <label class="mute">Version <select class="in" id="pver"></select></label></div>
+          <div class="pcs" id="fcards"></div>
+        </div>
+        <input class="in" type="search" id="bq" placeholder="Search Modrinth">
+        <div class="tools">
+          <span class="mute" id="installto">Install to</span>
+          <select class="in" id="binst" aria-label="Target instance"></select>
+          <select class="in" id="bsort" aria-label="Sort by">
+            <option value="relevance">Sort: Relevance</option>
+            <option value="downloads">Downloads</option>
+            <option value="follows">Follows</option>
+            <option value="newest">Newest</option>
+            <option value="updated">Recently updated</option>
+          </select>
+          <span class="sp"></span>
+          <button class="btn" id="pprev" aria-label="Previous page">&#8249;</button>
+          <span class="mute" id="pg"></span>
+          <button class="btn" id="pnext" aria-label="Next page">&#8250;</button>
+        </div>
+        <div class="mute" id="bst" style="margin-bottom:10px"></div>
+        <div id="bres"></div>
+      </div>
+      <aside class="filters glass"><h3>Category</h3><div class="pills" id="cats"></div></aside>
+    </div>
+  </section>
+
+  <section class="view" id="v-logs">
+    <h1 class="t">Logs</h1>
+    <div class="logtools">
+      <button class="btn" id="lclear">Clear</button>
+      <button class="btn" id="lcopy">Copy</button>
+      <button class="btn" id="lopen">Open folder</button>
+    </div>
+    <div class="logbox" id="logbox"></div>
+  </section>
+
+  <section class="view" id="v-set">
+    <div class="head"><h1 class="t">Settings</h1><button class="btn" id="sreset">Reset appearance</button></div>
+    <div id="setbox"></div>
+  </section>
+
+  <section class="view" id="v-acct">
+    <h1 class="t">Account</h1>
+    <div class="panel glass">
+      <div class="row"><div><b id="aname">Not signed in</b><div class="mute">Sign in with the Microsoft account that owns Minecraft.</div></div>
+      <button class="btn main" id="login">Sign in with Microsoft</button></div>
+      <div class="mute" id="astatus"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <h2>Create instance</h2>
+  <label>Name<input class="in" id="dname" maxlength="40" placeholder="e.g. donutsmp"></label>
+  <label>Minecraft version<select class="in" id="dver2"></select></label>
+  <label class="chk"><input type="checkbox" id="dsnap"> Show snapshots</label>
+  <div class="row"><div><b>Fabric</b><div class="mute">Needed for mods</div></div><button class="sw on" id="dfab" role="switch" aria-checked="true" aria-label="Fabric"></button></div>
+  <label>Memory: <b id="dramv">4</b> GB<input type="range" id="dram" min="1" max="16" value="4"></label>
+  <div class="mute" id="derr"></div>
+  <div class="actions"><button class="btn" id="dcancel">Cancel</button><button class="btn main" id="dok">Create</button></div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
+const S = { vers: [], inst: [], cur: null, open: null, sub: 'mods', user: null, busy: false, cfg: {},
+  b: { q: '', sort: 'relevance', cats: [], page: 0, target: null, type: 'mod' }, presets: [] };
+const err = e => String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+const status = t => $('#status').textContent = t;
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+const PAL = [['#c0414b', '#3a1226'], ['#e0ad4a', '#3b2410'], ['#4f5fd6', '#161a44'], ['#2f9e8f', '#0f2f33'], ['#8a4fd6', '#26164a']];
+const grad = id => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; const p = PAL[h % PAL.length]; return `linear-gradient(135deg,${p[0]},${p[1]})`; };
+const nf = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+const ago = d => { const s = (new Date(d) - Date.now()) / 1000;
+  for (const [n, v] of [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600]]) if (Math.abs(s) >= v) return rtf.format(Math.round(s / v), n);
+  return 'just now'; };
+const byId = id => S.inst.find(i => i.id === id), cur = () => byId(S.cur);
+const label = i => `${i.version} · ${i.fabric ? 'Fabric' : 'Vanilla'}`;
+const recent = () => [...S.inst].sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0) || b.created - a.created);
+const saveCur = () => cc.invoke('cfg:set', { ...S.cfg, current: S.cur });
+
+// ---- Navigation & window ----
+function go(v) {
+  $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === (v === 'inst' ? 'insts' : v)));
+  $$('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
+  if (v === 'browse') { renderTargets(); searchMods(); }
+}
+$$('nav button').forEach(b => b.onclick = () => go(b.dataset.v));
+$('#chip').onclick = () => go('acct');
+$('#wmin').onclick = () => cc.invoke('win', 'min');
+$('#wmax').onclick = () => cc.invoke('win', 'max');
+$('#wclose').onclick = () => cc.invoke('win', 'close');
+document.addEventListener('click', e => { if (!e.target.closest('#pop,#gear')) $('#pop').classList.remove('on'); });
+$('#gear').onclick = () => $('#pop').classList.toggle('on');
+$('#av').onerror = () => $('#av').hidden = true;
+
+// ---- Instances: data ----
+async function upd(id, patch) {
+  const n = await cc.invoke('inst:update', id, patch);
+  S.inst = S.inst.map(i => i.id === id ? n : i); renderAll();
+}
+function renderAll() { renderHome(); renderInsts(); if (S.open && byId(S.open)) renderInst(); }
+
+// ---- Home ----
+function card(i, onclick) {
+  const b = el('button', 'vc' + (i.id === S.cur ? ' on' : ''));
+  b.style.background = grad(i.id);
+  b.append(el('span', null, i.name), el('small', null, label(i)));
+  b.onclick = onclick; return b;
+}
+function addCard() {
+  const b = el('button', 'vc add'); b.append(el('span', null, '+'), el('small', null, 'Create instance'));
+  b.onclick = openCreate; return b;
+}
+function renderHome() {
+  const c = cur();
+  $('#selv').textContent = c ? c.name : 'No instance yet';
+  $('#selsub').textContent = c ? label(c) : 'Create your first instance to start playing.';
+  $('#go').textContent = !c ? 'Create instance' : S.user ? 'Play' : 'Sign in';
+  $('#gear').hidden = !c;
+  if (c) { $('#pfab').classList.toggle('on', c.fabric); $('#pfab').setAttribute('aria-checked', c.fabric); $('#ram').value = c.ram; $('#ramv').textContent = c.ram; }
+  const box = $('#cards'); box.innerHTML = '';
+  recent().slice(0, 4).forEach(i => box.append(card(i, () => { S.cur = i.id; saveCur(); renderAll(); })));
+  box.append(addCard());
+}
+$('#pfab').onclick = () => { const c = cur(); if (c) upd(c.id, { fabric: !c.fabric }); };
+$('#ram').oninput = e => { const c = cur(); if (c) upd(c.id, { ram: +e.target.value }); };
+
+// ---- Instances list & detail ----
+function renderInsts() {
+  const g = $('#igrid'); g.innerHTML = '';
+  recent().forEach(i => g.append(card(i, () => openInst(i.id))));
+  g.append(addCard());
+}
+function openInst(id) { S.open = id; S.sub = 'mods'; go('inst'); renderInst(); }
+function renderInst() {
+  const i = byId(S.open); if (!i) return go('insts');
+  $('#iname').textContent = i.name; $('#isub').textContent = label(i);
+  const vs = $('#iver'); vs.innerHTML = '';
+  S.vers.filter(v => v.type === 'release' || v.id === i.version).forEach(v => { const o = el('option', null, v.id); o.value = v.id; vs.append(o); });
+  vs.value = i.version;
+  $('#ifab').classList.toggle('on', i.fabric); $('#ifab').setAttribute('aria-checked', i.fabric);
+  $$('#subs .pill').forEach(b => b.classList.toggle('on', b.dataset.s === S.sub));
+  renderFiles();
+}
+async function renderFiles() {
+  const i = byId(S.open), my = S.open + S.sub; if (!i) return;
+  const list = await cc.invoke('inst:files', i.id, S.sub);
+  if (my !== S.open + S.sub) return;
+  $('#ipath').textContent = `carpetclient / instances / ${i.id} / ${S.sub}`;
+  $('#fapi').hidden = S.sub !== 'mods';
+  const ul = $('#files'); ul.innerHTML = '';
+  if (!list.length) ul.append(el('div', 'mute', S.sub === 'mods' ? 'No mods yet. Find some in Browse.' : 'Nothing here yet.'));
+  list.forEach(f => {
+    const li = el('li'), b = el('button', null, 'Remove');
+    b.onclick = async () => {
+      if (!confirm(`Remove "${f.name}" from this instance?`)) return;
+      await cc.invoke('inst:remove', i.id, S.sub, f.name); renderFiles();
+    };
+    li.append(el('span', null, f.name + (f.dir ? '  (folder)' : '')), b); ul.append(li);
+  });
+}
+$('#subs').onclick = e => { if (e.target.dataset.s) { S.sub = e.target.dataset.s; $('#fstat').textContent = ''; renderInst(); } };
+$('#iback').onclick = () => go('insts');
+$('#iopen').onclick = () => cc.invoke('inst:open', S.open, '');
+$('#fopen').onclick = () => cc.invoke('inst:open', S.open, S.sub);
+$('#iplay').onclick = () => play(S.open);
+$('#iver').onchange = e => { const v = S.vers.find(x => x.id === e.target.value); upd(S.open, { version: v.id, type: v.type }); };
+$('#ifab').onclick = () => { const i = byId(S.open); if (i) upd(i.id, { fabric: !i.fabric }); };
+$('#fapi').onclick = async () => {
+  $('#fstat').textContent = 'Installing Fabric API…';
+  try { const f = await cc.invoke('mods:fabricApi', S.open); $('#fstat').textContent = f.length ? 'Installed: ' + f.join(', ') : 'Already installed.'; renderFiles(); }
+  catch (e) { $('#fstat').textContent = err(e); }
+};
+$('#idel').onclick = async () => {
+  const i = byId(S.open); if (!i) return;
+  if (!confirm(`Delete "${i.name}" and ALL its files (mods, worlds, configs)? This cannot be undone.`)) return;
+  await cc.invoke('inst:delete', i.id);
+  S.inst = S.inst.filter(x => x.id !== i.id); S.open = null;
+  if (S.cur === i.id) { S.cur = (recent()[0] || {}).id || null; saveCur(); }
+  renderAll(); go('insts');
+};
+
+// ---- Create dialog ----
+function fillVers() {
+  const snap = $('#dsnap').checked, s = $('#dver2'); s.innerHTML = '';
+  S.vers.filter(v => v.type === 'release' || (snap && v.type === 'snapshot')).forEach(v => { const o = el('option', null, v.id); o.value = v.id; s.append(o); });
+}
+function openCreate() {
+  $('#dname').value = ''; $('#derr').textContent = ''; $('#dsnap').checked = false;
+  $('#dfab').classList.add('on'); $('#dfab').setAttribute('aria-checked', 'true');
+  $('#dram').value = 4; $('#dramv').textContent = 4; fillVers();
+  $('#dlg').showModal(); $('#dname').focus();
+}
+$('#dsnap').onchange = fillVers;
+$('#dram').oninput = e => $('#dramv').textContent = e.target.value;
+$('#dfab').onclick = () => { const on = $('#dfab').classList.toggle('on'); $('#dfab').setAttribute('aria-checked', on); };
+$('#dcancel').onclick = () => $('#dlg').close();
+$('#dok').onclick = async () => {
+  const v = S.vers.find(x => x.id === $('#dver2').value);
+  if (!v) return $('#derr').textContent = 'Versions are still loading. Try again in a moment.';
+  try {
+    const n = await cc.invoke('inst:create', { name: $('#dname').value, version: v.id, type: v.type, fabric: $('#dfab').classList.contains('on'), ram: +$('#dram').value });
+    S.inst.push(n); S.cur = n.id; saveCur(); $('#dlg').close(); renderAll(); go('home');
+  } catch (e) { $('#derr').textContent = err(e); }
+};
+$('#newi').onclick = openCreate;
+
+// ---- Account ----
+function setUser(u) {
+  S.user = u;
+  $('#cname').textContent = u ? u.name : 'Sign in';
+  const a = $('#av'); if (u) { a.src = `https://mc-heads.net/avatar/${u.id}/56`; a.hidden = false; } else a.hidden = true;
+  $('#aname').textContent = u ? u.name : 'Not signed in';
+  $('#login').textContent = u ? 'Sign out' : 'Sign in with Microsoft';
+  renderHome();
+}
+async function login() {
+  $('#astatus').textContent = 'Microsoft window opened…';
+  try { setUser(await cc.invoke('auth:login')); $('#astatus').textContent = ''; }
+  catch (e) { $('#astatus').textContent = 'Sign-in failed: ' + err(e); go('acct'); }
+}
+$('#login').onclick = async () => { if (S.user) { await cc.invoke('auth:logout'); setUser(null); } else login(); };
+
+// ---- Browse (Modrinth) ----
+const CATS = [['optimization', 'Optimization'], ['adventure', 'Adventure'], ['decoration', 'Decoration'], ['equipment', 'Equipment'],
+  ['game-mechanics', 'Game mechanics'], ['library', 'Library'], ['magic', 'Magic'], ['mobs', 'Mobs'], ['storage', 'Storage'],
+  ['technology', 'Technology'], ['transportation', 'Transportation'], ['utility', 'Utility'], ['worldgen', 'World generation'],
+  ['cursed', 'Cursed'], ['social', 'Social'], ['food', 'Food']];
+const LOADERS = new Set(['fabric', 'forge', 'neoforge', 'quilt']);
+CATS.forEach(([id, l]) => {
+  const b = el('button', 'pill', l);
+  b.onclick = () => { const i = S.b.cats.indexOf(id); i < 0 ? S.b.cats.push(id) : S.b.cats.splice(i, 1); b.classList.toggle('on', i < 0); S.b.page = 0; searchMods(); };
+  $('#cats').append(b);
+});
+function renderTargets() {
+  const s = $('#binst'); s.innerHTML = '';
+  S.inst.forEach(i => { const o = el('option', null, `${i.name} (${label(i)})`); o.value = i.id; s.append(o); });
+  if (!byId(S.b.target)) S.b.target = S.cur || (S.inst[0] || {}).id || null;
+  s.value = S.b.target || '';
+}
+let st, tok = 0;
+$('#binst').onchange = e => { S.b.target = e.target.value; S.b.page = 0; searchMods(); };
+$('#bq').oninput = e => { S.b.q = e.target.value.trim(); S.b.page = 0; clearTimeout(st); st = setTimeout(searchMods, 350); };
+$('#bsort').onchange = e => { S.b.sort = e.target.value; S.b.page = 0; searchMods(); };
+$('#pprev').onclick = () => { S.b.page--; searchMods(); };
+$('#pnext').onclick = () => { S.b.page++; searchMods(); };
+$('#types').onclick = e => {
+  if (!e.target.dataset.t) return;
+  S.b.type = e.target.dataset.t; S.b.page = 0;
+  $$('#types .pill').forEach(b => b.classList.toggle('on', b === e.target));
+  const pack = S.b.type === 'modpack';
+  $('.filters').hidden = S.b.type !== 'mod'; $('#featured').hidden = !pack;
+  $('#binst').hidden = $('#installto').hidden = pack;
+  searchMods();
+};
+cc.on('prog', t => $('#bst').textContent = t);
+
+function renderFeatured() {
+  const box = $('#fcards'); box.innerHTML = '';
+  const sel = $('#pver'); sel.innerHTML = '';
+  S.vers.filter(v => v.type === 'release').slice(0, 15).forEach(v => { const o = el('option', null, v.id); o.value = v.id; sel.append(o); });
+  (S.presets || []).forEach(p => {
+    const c = el('div', 'pc glass'), b = el('button', 'btn main', 'Install');
+    b.onclick = async () => {
+      b.disabled = true; $('#bst').textContent = `Installing ${p.name}…`;
+      try {
+        const r = await cc.invoke('preset:install', { id: p.id, version: $('#pver').value });
+        S.inst.push(r.inst); S.cur = r.inst.id; saveCur(); renderAll();
+        $('#bst').textContent = `Created "${r.inst.name}" (find it on Home).` + (r.skipped.length ? ` Not available for ${r.inst.version}: ${r.skipped.join(', ')}` : '');
+      } catch (e) { $('#bst').textContent = err(e); }
+      b.disabled = false;
+    };
+    c.append(el('b', null, p.name), el('div', 'mute', p.desc), b); box.append(c);
+  });
+}
+
+function modRow(h, inst, type) {
+  const r = el('div', 'r glass');
+  const ic = h.icon ? Object.assign(el('img', 'ic'), { src: h.icon, alt: '' }) : el('div', 'ic');
+  const body = el('div', 'rb'), t = el('div');
+  t.append(el('b', 'rt', h.title), el('span', 'by', ' by ' + h.author));
+  const tags = el('div', 'tags');
+  (h.cats || []).filter(c => !LOADERS.has(c)).slice(0, 3).forEach(c => tags.append(el('span', 'tag', (CATS.find(x => x[0] === c) || [0, c])[1])));
+  if (type === 'mod') { const c = h.client !== 'unsupported', s = h.server !== 'unsupported'; tags.append(el('span', 'tag', c && s ? 'Client & Server' : c ? 'Client' : 'Server')); }
+  body.append(t, el('div', 'rd', h.desc), tags);
+  const side = el('div', 'side'), btn = el('button', 'inst', type === 'modpack' ? 'Install pack' : 'Install');
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Installing…';
+    try {
+      if (type === 'modpack') {
+        const n = await cc.invoke('modpack:install', h.id);
+        S.inst.push(n); S.cur = n.id; saveCur(); renderAll();
+        $('#bst').textContent = `Created instance "${n.name}" (find it on Home).`;
+      } else {
+        const files = await cc.invoke('content:install', inst.id, h.id, type);
+        $('#bst').textContent = files.length ? `Added to ${inst.name}: ${files.join(', ')}` : `Already installed in ${inst.name}.`;
+      }
+      btn.textContent = 'Installed';
+    } catch (e) { btn.disabled = false; btn.textContent = type === 'modpack' ? 'Install pack' : 'Install'; $('#bst').textContent = err(e); }
+  };
+  side.append(btn, el('div', 'st', `⬇ ${nf.format(h.dl)}   ♥ ${nf.format(h.follows)}`), el('div', 'st', '↻ ' + ago(h.updated)));
+  r.append(ic, body, side); return r;
+}
+async function searchMods() {
+  const type = S.b.type, inst = byId(S.b.target), box = $('#bres');
+  if (type !== 'modpack' && !inst) { box.innerHTML = ''; $('#pg').textContent = ''; $('#bst').textContent = 'Create an instance first, then pick it above to install into it.'; return; }
+  const my = ++tok;
+  $('#bst').textContent = 'Searching…';
+  try {
+    const r = await cc.invoke('mods:search', { type, query: S.b.q, mcv: inst && inst.version, sort: S.b.sort, cats: S.b.cats, offset: S.b.page * 20 });
+    if (my !== tok) return;
+    const pages = Math.max(1, Math.ceil(r.total / 20));
+    const where = type === 'modpack' ? ' (Fabric modpacks)' : ` for ${inst.version}` + (type === 'mod' ? ' · Fabric' + (inst.fabric ? '' : ' (enable Fabric on this instance to use mods)') : '');
+    $('#bst').textContent = r.hits.length ? `${r.total.toLocaleString('en')} results${where}` : 'Nothing found.';
+    $('#pg').textContent = `Page ${S.b.page + 1} of ${pages}`;
+    $('#pprev').disabled = S.b.page === 0; $('#pnext').disabled = S.b.page + 1 >= pages;
+    box.innerHTML = ''; r.hits.forEach(h => box.append(modRow(h, inst, type)));
+  } catch (e) { if (my === tok) $('#bst').textContent = 'Search failed: ' + err(e); }
+}
+
+// ---- Logs ----
+const logLines = [];
+function addLog(text) {
+  const box = $('#logbox'), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  text.split('\n').filter(Boolean).forEach(line => {
+    logLines.push(line);
+    box.append(el('div', /error|exception|fatal|crash/i.test(line) ? 'e' : /warn/i.test(line) ? 'w' : line.startsWith('[Launcher]') ? 'l' : '', line));
+  });
+  while (box.childElementCount > 3000) { box.firstChild.remove(); logLines.shift(); }
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+cc.on('log', addLog);
+$('#lclear').onclick = () => { $('#logbox').innerHTML = ''; logLines.length = 0; };
+$('#lcopy').onclick = () => { navigator.clipboard.writeText(logLines.join('\n')); $('#lcopy').textContent = 'Copied'; setTimeout(() => $('#lcopy').textContent = 'Copy', 1500); };
+$('#lopen').onclick = () => cc.invoke('logs:open');
+
+// ---- Launch ----
+function busy(b) { S.busy = b; $('#go').disabled = b; $('#iplay').disabled = b; if (!b) $('#bar').style.width = '0'; }
+async function play(id) {
+  if (!byId(id)) return openCreate();
+  if (!S.user) return login();
+  S.cur = id; saveCur(); busy(true); status('Starting…'); go('home');
+  try { await upd(id, { lastPlayed: Date.now() }); await cc.invoke('launch', id); }
+  catch (e) { status(err(e)); busy(false); }
+}
+$('#go').onclick = () => { const c = cur(); c ? play(c.id) : openCreate(); };
+cc.on('status', status);
+cc.on('progress', p => { $('#bar').style.width = (p.task / p.total * 100) + '%'; status(`Downloading ${p.type}: ${p.task} of ${p.total}`); });
+cc.on('running', () => { $('#bar').style.width = '100%'; status('Minecraft is running.'); });
+cc.on('closed', () => { status('Minecraft closed.'); busy(false); });
+
+// ---- Settings & theme ----
+const DEF = { theme: 'carpet', accent: '', bg: 'art', dim: 55, bgblur: 2, glass: 55, blur: 16, radius: 16, scale: 100, font: 'sans', compact: false, jvm: '', java: '', gw: '', gh: '', fs: false };
+const THEMES = { carpet: ['#c0414b', '#e0ad4a'], purple: ['#8a4fd6', '#d9a2ff'], ocean: ['#2f7fd6', '#6fd0e0'], emerald: ['#2f9e6a', '#e0d46a'], rose: ['#d6447f', '#ffb0c8'], mono: ['#6b7080', '#e6e8f0'] };
+const FONTS = { sans: "'Poppins','Segoe UI Variable Display','Segoe UI',system-ui,sans-serif", serif: "Georgia,'Times New Roman',serif", mono: "Consolas,'Cascadia Mono',monospace", round: "'Trebuchet MS','Segoe UI',sans-serif" };
+const cfgS = () => ({ ...DEF, ...(S.cfg.settings || {}) });
+const lighten = h => { const n = parseInt(h.slice(1), 16), f = c => Math.min(255, Math.round(c + (255 - c) * .18));
+  return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(f).map(x => x.toString(16).padStart(2, '0')).join(''); };
+function applyTheme() {
+  const s = cfgS(), [a, g] = THEMES[s.theme] || THEMES.carpet, acc = s.accent || a, r = document.documentElement.style;
+  r.setProperty('--red', acc); r.setProperty('--red2', lighten(acc)); r.setProperty('--gold', g);
+  r.setProperty('--glass', `rgba(26,31,58,${s.glass / 100})`); r.setProperty('--blur', s.blur + 'px'); r.setProperty('--radius', s.radius + 'px');
+  r.setProperty('--dim', s.dim / 100); r.setProperty('--bgblur', s.bgblur + 'px');
+  r.setProperty('--bgimg', s.bg === 'art' ? 'url(assets/bg.jpg)' : s.bg === 'gradient' ? 'linear-gradient(135deg,#1b1740,#0b0d19 55%,#3a1226)' : 'none');
+  document.body.style.fontFamily = FONTS[s.font] || FONTS.sans;
+  document.body.classList.toggle('compact', !!s.compact);
+  cc.zoom(s.scale / 100);
+}
+const SET = [
+  ['Appearance', [
+    ['select', 'theme', 'Color theme', [['carpet', 'Carpet'], ['purple', 'Purple'], ['ocean', 'Ocean'], ['emerald', 'Emerald'], ['rose', 'Rose'], ['mono', 'Mono']]],
+    ['color', 'accent', 'Custom accent color'],
+    ['select', 'bg', 'Background', [['art', 'Carpet art'], ['gradient', 'Gradient'], ['solid', 'Solid dark']]],
+    ['range', 'dim', 'Background dimming', 0, 90, '%'], ['range', 'bgblur', 'Background blur', 0, 24, 'px'],
+    ['range', 'glass', 'Glass opacity', 10, 95, '%'], ['range', 'blur', 'Glass blur', 0, 40, 'px'],
+    ['range', 'radius', 'Corner roundness', 0, 28, 'px'], ['range', 'scale', 'Interface size', 80, 125, '%'],
+    ['select', 'font', 'Font', [['sans', 'Modern'], ['serif', 'Serif'], ['mono', 'Mono'], ['round', 'Rounded']]],
+    ['toggle', 'compact', 'Compact layout']]],
+  ['Game', [
+    ['text', 'jvm', 'Extra JVM arguments', '-XX:+UseZGC'], ['text', 'java', 'Custom Java path (optional)', 'C:\\Java\\bin\\java.exe'],
+    ['number', 'gw', 'Window width', '1280'], ['number', 'gh', 'Window height', '720'], ['toggle', 'fs', 'Start in fullscreen']]],
+];
+function setOpt(k, v) { S.cfg.settings = { ...(S.cfg.settings || {}), [k]: v }; applyTheme(); saveCur(); }
+function ctl([type, key, lab, a, b, unit]) {
+  const row = el('div', 'row sr'), s = cfgS(); let c;
+  row.append(el('span', null, lab));
+  if (type === 'toggle') { c = el('button', 'sw' + (s[key] ? ' on' : '')); c.setAttribute('role', 'switch'); c.setAttribute('aria-label', lab); c.onclick = () => { setOpt(key, !cfgS()[key]); c.classList.toggle('on'); }; }
+  else if (type === 'range') {
+    const i = el('input'), v = el('span', 'mute', s[key] + unit), w = el('span', 'rng');
+    Object.assign(i, { type: 'range', min: a, max: b, value: s[key] }); i.setAttribute('aria-label', lab);
+    i.oninput = () => { v.textContent = i.value + unit; setOpt(key, +i.value); }; w.append(i, v); c = w;
+  } else if (type === 'select') {
+    c = el('select', 'in'); c.setAttribute('aria-label', lab);
+    a.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; c.append(o); }); c.value = s[key];
+    c.onchange = () => { if (key === 'theme') { S.cfg.settings = { ...(S.cfg.settings || {}), theme: c.value, accent: '' }; applyTheme(); saveCur(); buildSettings(); } else setOpt(key, c.value); };
+  } else if (type === 'color') { c = el('input'); Object.assign(c, { type: 'color', value: s[key] || (THEMES[s.theme] || THEMES.carpet)[0] }); c.setAttribute('aria-label', lab); c.oninput = () => setOpt(key, c.value); }
+  else { c = el('input', 'in'); Object.assign(c, { type, value: s[key], placeholder: a || '' }); c.setAttribute('aria-label', lab); c.onchange = () => setOpt(key, c.value); }
+  row.append(c); return row;
+}
+function buildSettings() {
+  const root = $('#setbox'); root.innerHTML = '';
+  SET.forEach(([title, items]) => { const p = el('div', 'panel glass'); p.append(el('h3', null, title)); items.forEach(it => p.append(ctl(it))); root.append(p); });
+}
+$('#sreset').onclick = () => { const keep = ['jvm', 'java', 'gw', 'gh', 'fs'], o = {}; keep.forEach(k => { if (S.cfg.settings && k in S.cfg.settings) o[k] = S.cfg.settings[k]; }); S.cfg.settings = o; applyTheme(); saveCur(); buildSettings(); };
+
+// ---- Init ----
+(async () => {
+  Object.assign(S.cfg, await cc.invoke('cfg:get'));
+  applyTheme(); buildSettings();
+  S.inst = await cc.invoke('inst:list');
+  S.cur = byId(S.cfg.current) ? S.cfg.current : (recent()[0] || {}).id || null;
+  renderAll();
+  cc.invoke('auth:restore').then(setUser);
+  try { S.vers = await cc.invoke('versions'); S.presets = await cc.invoke('preset:list'); } catch (e) { status('Could not load versions: ' + err(e)); }
+  renderAll(); renderFeatured();
+})();
+</script>
+</body>
+</html>
