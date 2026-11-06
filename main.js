@@ -58,8 +58,8 @@ async function ensureFabric(mcv) {
 
 // ---------- Instances ----------
 const INST = path.join(ROOT, 'instances');
-const SUBS = ['mods', 'resourcepacks', 'shaderpacks', 'schematics', 'saves', 'config'];
-const KEYS = ['name', 'version', 'type', 'fabric', 'ram', 'lastPlayed', 'servers', 'lastServer'];
+const SUBS = ['mods', 'resourcepacks', 'shaderpacks', 'schematics', 'saves', 'config', 'crash-reports', 'logs'];
+const KEYS = ['name', 'version', 'type', 'fabric', 'ram', 'lastPlayed', 'servers', 'lastServer', 'notes', 'java', 'jvm'];
 const insts = () => load().instances || [];
 const find = (id) => insts().find(i => i.id === id);
 const idir = (id, sub = '') => path.join(INST, id, sub);
@@ -98,6 +98,48 @@ ipcMain.handle('inst:remove', (_, id, sub, name) => {
   if (!find(id) || !SUBS.includes(sub)) return;
   fs.rmSync(path.join(idir(id, sub), path.basename(name)), { recursive: true, force: true });
 });
+ipcMain.handle('inst:toggle', (_, id, sub, name) => {
+  if (!find(id) || !SUBS.includes(sub)) return;
+  const b = path.basename(name), d = idir(id, sub);
+  fs.renameSync(path.join(d, b), path.join(d, b.endsWith('.disabled') ? b.slice(0, -9) : b + '.disabled'));
+});
+ipcMain.handle('inst:read', (_, id, sub, name) => {
+  if (!find(id) || !SUBS.includes(sub)) return '';
+  return fs.readFileSync(path.join(idir(id, sub), path.basename(name)), 'utf8').slice(-300000);
+});
+ipcMain.handle('inst:duplicate', (_, id) => {
+  const i = find(id);
+  if (!i) throw new Error('Instance not found.');
+  const n = makeInst({ name: `${i.name} copy`, version: i.version, type: i.type, fabric: i.fabric, ram: i.ram });
+  fs.cpSync(idir(id), idir(n.id), { recursive: true });
+  save({ instances: insts().map(x => (x.id === n.id ? { ...x, notes: i.notes, java: i.java, jvm: i.jvm, servers: i.servers } : x)) });
+  return find(n.id);
+});
+ipcMain.handle('inst:export', async (_, id) => {
+  const i = find(id);
+  if (!i) throw new Error('Instance not found.');
+  const r = await dialog.showSaveDialog(win, { defaultPath: `${i.name}.zip`, filters: [{ name: 'Zip', extensions: ['zip'] }] });
+  if (r.canceled) return null;
+  fs.writeFileSync(path.join(idir(id), 'carpet-instance.json'), JSON.stringify(i));
+  if ((await run('tar', ['-a', '-cf', r.filePath, '-C', idir(id), '.'], 600000)) === null) throw new Error('Export failed.');
+  return r.filePath;
+});
+ipcMain.handle('inst:import', async () => {
+  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'Zip', extensions: ['zip'] }], properties: ['openFile'] });
+  if (r.canceled) return null;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-imp-'));
+  try {
+    if ((await run('tar', ['-xf', r.filePaths[0], '-C', tmp], 600000)) === null) throw new Error('Could not unpack that file.');
+    const mf = path.join(tmp, 'carpet-instance.json');
+    if (!fs.existsSync(mf)) throw new Error('This is not a Carpet Client export.');
+    const m = JSON.parse(fs.readFileSync(mf, 'utf8')), n = makeInst({ name: m.name, version: m.version, type: m.type, fabric: m.fabric, ram: m.ram });
+    fs.cpSync(tmp, idir(n.id), { recursive: true });
+    save({ instances: insts().map(x => (x.id === n.id ? { ...x, notes: m.notes, jvm: m.jvm, servers: m.servers || [] } : x)) });
+    return find(n.id);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+const hook = (text) => { const u = ((load().cfg || {}).settings || {}).webhook; if (u) fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: text }) }).catch(() => {}); };
+
 ipcMain.handle('inst:open', (_, id, sub) => {
   if (!find(id)) return;
   const d = idir(id, SUBS.includes(sub) ? sub : '');
@@ -106,6 +148,7 @@ ipcMain.handle('inst:open', (_, id, sub) => {
 });
 
 // ---------- Modrinth ----------
+const MR = () => (((load().cfg || {}).settings || {}).mrbase || 'https://api.modrinth.com/v2').replace(/\/+$/, '');
 const MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const TYPE_DIR = { mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' };
 const PACKS = [
@@ -122,7 +165,7 @@ ipcMain.handle('mods:search', async (_, o) => {
   if (type === 'mod' || type === 'modpack') f.push(['categories:fabric']);
   if (type === 'mod') (o.cats || []).forEach(c => f.push([`categories:${c}`]));
   if (type !== 'modpack' && o.mcv) f.push([`versions:${o.mcv}`]);
-  const r = await getJSON(`https://api.modrinth.com/v2/search?limit=20&offset=${o.offset || 0}&index=${o.sort || 'relevance'}&query=${encodeURIComponent(o.query || '')}&facets=${encodeURIComponent(JSON.stringify(f))}`);
+  const r = await getJSON(`${MR()}/search?limit=20&offset=${o.offset || 0}&index=${o.sort || 'relevance'}&query=${encodeURIComponent(o.query || '')}&facets=${encodeURIComponent(JSON.stringify(f))}`);
   return {
     total: r.total_hits,
     hits: r.hits.map(h => ({ id: h.project_id, title: h.title, desc: h.description, icon: h.icon_url, dl: h.downloads, follows: h.follows,
@@ -132,7 +175,7 @@ ipcMain.handle('mods:search', async (_, o) => {
 async function installProject(projectId, type, mcv, dir, seen = new Set()) {
   if (seen.has(projectId)) return [];
   seen.add(projectId);
-  const base = `https://api.modrinth.com/v2/project/${projectId}/version`;
+  const base = `${MR()}/project/${projectId}/version`;
   const lo = type === 'mod' ? '["fabric"]' : type === 'shader' ? '["iris"]' : null;
   const q = (ver) => {
     const p = [lo && `loaders=${encodeURIComponent(lo)}`, ver && `game_versions=${encodeURIComponent(JSON.stringify([mcv]))}`].filter(Boolean);
@@ -191,7 +234,7 @@ ipcMain.handle('preset:install', async (_, o) => {
 
 // Modrinth modpack (.mrpack) -> new instance
 ipcMain.handle('modpack:install', async (_, projectId) => {
-  const vs = await getJSON(`https://api.modrinth.com/v2/project/${projectId}/version?loaders=${encodeURIComponent('["fabric"]')}`);
+  const vs = await getJSON(`${MR()}/project/${projectId}/version?loaders=${encodeURIComponent('["fabric"]')}`);
   const v = vs.find(x => x.version_type === 'release') || vs[0];
   if (!v) throw new Error('No Fabric version of this modpack found.');
   const f = v.files.find(x => x.primary) || v.files[0];
@@ -300,16 +343,16 @@ ipcMain.handle('launch', async (_, instId, server) => {
   const javas = await findJavas();
   const java = javas.filter(j => j.major >= need).sort((a, b) => a.major - b.major || (a.path === 'java') - (b.path === 'java'))[0];
   const st = (load().cfg || {}).settings || {};
-  const javaPath = st.java && fs.existsSync(st.java) ? st.java : java ? java.path : await downloadJava(need, send);
+  const javaPath = (o.java || st.java) && fs.existsSync(o.java || st.java) ? (o.java || st.java) : java ? java.path : await downloadJava(need, send);
   const qp = (v) => { const m = v.match(/^1\.(\d+)/); if (m) return +m[1] >= 20; const w = v.match(/^(\d\d)w(\d\d)/); return w ? +w[1] > 23 || (+w[1] === 23 && +w[2] >= 14) : true; };
   const extra = {
-    ...(st.jvm ? { customArgs: String(st.jvm).split(/\s+/).filter(Boolean) } : {}),
+    ...((o.jvm || st.jvm) ? { customArgs: String(o.jvm || st.jvm).split(/\s+/).filter(Boolean) } : {}),
     ...(st.gw || st.gh || st.fs ? { window: { width: +st.gw || undefined, height: +st.gh || undefined, fullscreen: !!st.fs } } : {}),
   };
   if (server && server.address) {
     const [h, p] = String(server.address).split(':');
     extra.customLaunchArgs = qp(o.version) ? ['--quickPlayMultiplayer', server.address] : ['--server', h, '--port', p || '25565'];
-  }
+  } else if (server && server.world && qp(o.version)) extra.customLaunchArgs = ['--quickPlaySingleplayer', server.world];
   if ((await run(javaPath, ['-version'])) === null) {
     if (!java) fs.rmSync(path.join(ROOT, 'runtime', `java${need}`), { recursive: true, force: true });
     throw new Error(`Java does not start: ${javaPath}`);
@@ -325,10 +368,11 @@ ipcMain.handle('launch', async (_, instId, server) => {
     stream.write(t.endsWith('\n') ? t : t + '\n');
     send('log', t);
   };
+  hook(`▶ ${mc.profile.name} started ${o.name} (${o.version})`);
   log(`[Launcher] Starting ${o.name} (${o.version}${o.fabric ? ' with Fabric' : ''}, ${o.ram} GB)`);
   l.on('progress', p => send('progress', p));
   l.on('data', d => { send('running'); log(d); });
-  l.on('close', c => { log(`[Launcher] Minecraft closed (code ${c})`); stream.end(); send('closed', c); });
+  l.on('close', c => { log(`[Launcher] Minecraft closed (code ${c})`); stream.end(); hook(`⏹ ${o.name} closed (code ${c})${c ? ' - it may have crashed' : ''}`); send('closed', c); });
   const lines = [];
   l.on('debug', d => { lines.push(String(d)); if (lines.length > 40) lines.shift(); log('[Launcher] ' + d); });
   // Low-level hook: (1) run MCLC's Java check without cmd.exe, (2) pass launch arguments via a file
