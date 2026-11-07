@@ -124,20 +124,6 @@ ipcMain.handle('inst:export', async (_, id) => {
   if ((await run('tar', ['-a', '-cf', r.filePath, '-C', idir(id), '.'], 600000)) === null) throw new Error('Export failed.');
   return r.filePath;
 });
-ipcMain.handle('inst:import', async () => {
-  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'Zip', extensions: ['zip'] }], properties: ['openFile'] });
-  if (r.canceled) return null;
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-imp-'));
-  try {
-    if ((await run('tar', ['-xf', r.filePaths[0], '-C', tmp], 600000)) === null) throw new Error('Could not unpack that file.');
-    const mf = path.join(tmp, 'carpet-instance.json');
-    if (!fs.existsSync(mf)) throw new Error('This is not a Carpet Client export.');
-    const m = JSON.parse(fs.readFileSync(mf, 'utf8')), n = makeInst({ name: m.name, version: m.version, type: m.type, fabric: m.fabric, ram: m.ram });
-    fs.cpSync(tmp, idir(n.id), { recursive: true });
-    save({ instances: insts().map(x => (x.id === n.id ? { ...x, notes: m.notes, jvm: m.jvm, servers: m.servers || [] } : x)) });
-    return find(n.id);
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-});
 const hook = (text) => { const u = ((load().cfg || {}).settings || {}).webhook; if (u) fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: text }) }).catch(() => {}); };
 
 ipcMain.handle('inst:open', (_, id, sub) => {
@@ -233,22 +219,12 @@ ipcMain.handle('preset:install', async (_, o) => {
 });
 
 // Modrinth modpack (.mrpack) -> new instance
-ipcMain.handle('modpack:install', async (_, projectId) => {
-  const vs = await getJSON(`${MR()}/project/${projectId}/version?loaders=${encodeURIComponent('["fabric"]')}`);
-  const v = vs.find(x => x.version_type === 'release') || vs[0];
-  if (!v) throw new Error('No Fabric version of this modpack found.');
-  const f = v.files.find(x => x.primary) || v.files[0];
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-pack-'));
+async function installMrpack(out) {
+  const idx = JSON.parse(fs.readFileSync(path.join(out, 'modrinth.index.json'), 'utf8')), d = idx.dependencies || {};
+  if (!d.minecraft) throw new Error('This modpack has no Minecraft version.');
+  if (d.forge || d.neoforge || d['quilt-loader']) throw new Error('This modpack needs a loader other than Fabric.');
   let inst;
   try {
-    say('Downloading modpack…');
-    const archive = path.join(tmp, 'pack.mrpack'), out = path.join(tmp, 'x');
-    fs.writeFileSync(archive, Buffer.from(await (await fetch(f.url, { headers: { 'User-Agent': UA } })).arrayBuffer()));
-    fs.mkdirSync(out);
-    if ((await run('tar', ['-xf', archive, '-C', out], 120000)) === null) throw new Error('Could not unpack the modpack.');
-    const idx = JSON.parse(fs.readFileSync(path.join(out, 'modrinth.index.json'), 'utf8')), d = idx.dependencies || {};
-    if (!d.minecraft) throw new Error('This modpack has no Minecraft version.');
-    if (d.forge || d.neoforge || d['quilt-loader']) throw new Error('This modpack needs a loader other than Fabric.');
     inst = makeInst({ name: idx.name || 'Modpack', version: d.minecraft, type: await mcType(d.minecraft), fabric: !!d['fabric-loader'], ram: 4 });
     const root = path.resolve(idir(inst.id)), files = (idx.files || []).filter(x => !x.env || x.env.client !== 'unsupported');
     let n = 0;
@@ -268,7 +244,66 @@ ipcMain.handle('modpack:install', async (_, projectId) => {
     for (const o of ['overrides', 'client-overrides']) if (fs.existsSync(path.join(out, o))) fs.cpSync(path.join(out, o), root, { recursive: true });
     return inst;
   } catch (e) { if (inst) delInst(inst.id); throw e; }
-  finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+// Erkennt Modrinth (.mrpack), Carpet-Export und Prism/MultiMC-Instanzen
+async function importFolder(tmp) {
+  const has = (f) => fs.existsSync(path.join(tmp, f));
+  if (has('carpet-instance.json')) {
+    const m = JSON.parse(fs.readFileSync(path.join(tmp, 'carpet-instance.json'), 'utf8')), n = makeInst({ name: m.name, version: m.version, type: m.type, fabric: m.fabric, ram: m.ram });
+    fs.cpSync(tmp, idir(n.id), { recursive: true });
+    save({ instances: insts().map(x => (x.id === n.id ? { ...x, notes: m.notes, jvm: m.jvm, servers: m.servers || [] } : x)) });
+    return find(n.id);
+  }
+  if (has('modrinth.index.json')) return installMrpack(tmp);
+  let root = tmp;
+  const kids = fs.readdirSync(tmp);
+  if (!has('mmc-pack.json') && kids.length === 1 && fs.statSync(path.join(tmp, kids[0])).isDirectory()) root = path.join(tmp, kids[0]);
+  if (fs.existsSync(path.join(root, 'mmc-pack.json'))) {
+    const comps = JSON.parse(fs.readFileSync(path.join(root, 'mmc-pack.json'), 'utf8')).components || [], mcc = comps.find(c => c.uid === 'net.minecraft');
+    if (!mcc) throw new Error('This instance has no Minecraft version.');
+    if (comps.some(c => ['net.minecraftforge', 'net.neoforged', 'org.quiltmc.quilt-loader'].includes(c.uid))) throw new Error('This instance uses a loader other than Fabric.');
+    let name = 'Imported instance';
+    try { const m = fs.readFileSync(path.join(root, 'instance.cfg'), 'utf8').match(/^name=(.*)$/m); if (m) name = m[1].trim(); } catch {}
+    const n = makeInst({ name, version: mcc.version, type: await mcType(mcc.version), fabric: comps.some(c => c.uid === 'net.fabricmc.fabric-loader'), ram: 4 });
+    for (const d of ['.minecraft', 'minecraft']) if (fs.existsSync(path.join(root, d))) fs.cpSync(path.join(root, d), idir(n.id), { recursive: true });
+    return n;
+  }
+  if (has('manifest.json')) throw new Error('CurseForge packs need a CurseForge API key, which is not supported yet.');
+  throw new Error('Unknown file. Supported: Modrinth (.mrpack), Carpet exports and Prism/MultiMC instances.');
+}
+async function unpackTo(archive, tmp) {
+  const out = path.join(tmp, 'x');
+  fs.mkdirSync(out);
+  if ((await run('tar', ['-xf', archive, '-C', out], 600000)) === null) throw new Error('Could not unpack that file.');
+  return out;
+}
+ipcMain.handle('inst:import', async () => {
+  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'Modpacks & instances', extensions: ['mrpack', 'zip'] }], properties: ['openFile'] });
+  if (r.canceled) return null;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-imp-'));
+  try { return await importFolder(await unpackTo(r.filePaths[0], tmp)); } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+// Modrinth-Link, Projekt-ID/Slug oder direkter .mrpack/.zip-Link
+ipcMain.handle('modpack:install', async (_, ref) => {
+  ref = String(ref).trim();
+  const m = ref.match(/modrinth\.com\/(\w+)\/([^/?#]+)/);
+  if (m && m[1] !== 'modpack') throw new Error(`That link is a ${m[1]}, not a modpack. Use Browse to install it into an instance.`);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-pack-'));
+  try {
+    let url = ref;
+    if (m || !/^https?:\/\//i.test(ref)) {
+      const vs = await getJSON(`${MR()}/project/${m ? m[2] : ref}/version?loaders=${encodeURIComponent('["fabric"]')}`);
+      const v = vs.find(x => x.version_type === 'release') || vs[0];
+      if (!v) throw new Error('No Fabric version of this modpack found.');
+      url = (v.files.find(x => x.primary) || v.files[0]).url;
+    }
+    say('Downloading…');
+    const r = await fetch(url, { headers: { 'User-Agent': UA } });
+    if (!r.ok) throw new Error(`Download failed (${r.status}).`);
+    const archive = path.join(tmp, 'pack.zip');
+    fs.writeFileSync(archive, Buffer.from(await r.arrayBuffer()));
+    return await importFolder(await unpackTo(archive, tmp));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 ipcMain.handle('logs:open', () => { fs.mkdirSync(LOGS, { recursive: true }); return shell.openPath(LOGS); });
 
