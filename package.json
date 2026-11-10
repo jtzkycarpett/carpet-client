@@ -1,6 +1,6 @@
 {
   "name": "carpet-client",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Carpet Client \u2013 eigener Minecraft Launcher mit Fabric",
   "main": "main.js",
   "scripts": {
@@ -10,7 +10,8 @@
   "dependencies": {
     "minecraft-launcher-core": "^3.18.1",
     "msmc": "^5.0.5",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "discord-rpc": "^4.0.1"
   },
   "devDependencies": {
     "electron": "^31.0.0",
