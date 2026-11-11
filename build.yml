@@ -1,6 +1,11 @@
 name: Build Carpet Client
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach the files to (e.g. v0.7.0). Leave empty for a test build only.'
+        required: false
+        default: ''
   push:
     tags: ['v*']
 permissions:
@@ -17,14 +22,7 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - name: Build only (manual run)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: npx electron-builder --publish never
-      - name: Build and publish release (tag run)
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        run: npx electron-builder --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npx electron-builder --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: carpet-client-${{ matrix.os }}
@@ -32,3 +30,15 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.AppImage
+            dist/latest*.yml
+            dist/*.blockmap
+      - uses: softprops/action-gh-release@v2
+        if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.tag != '' }}
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/latest*.yml
+            dist/*.blockmap
