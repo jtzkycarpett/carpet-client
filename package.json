@@ -1,6 +1,6 @@
 {
   "name": "carpet-client",
-  "version": "2.0.4",
+  "version": "2.4.1",
   "description": "Carpet Client \u2013 eigener Minecraft Launcher mit Fabric",
   "main": "main.js",
   "scripts": {
